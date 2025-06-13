@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>НАГРАДА</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
+    <style>
+        /*
+         * ====================================================================================
+         * ==                               СТИЛИЗАЦИЯ КОШМАРА                               ==
+         * ====================================================================================
+         * Здесь определяется визуальная атмосфера. Темные тона, зловещее свечение и эффекты,
+         * призванные вызывать чувство дискомфорта и постоянного наблюдения.
+        */
+        @import url('https://fonts.googleapis.com/css2?family=Tektur:wght@900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap');
+
+        /* Анимация для едва заметного "дыхания" фона с монстром */
+        @keyframes subtle_breathing {
+            0%, 100% { transform: scale(1.0); opacity: 0.6; }
+            50% { transform: scale(1.01); opacity: 0.7; }
+        }
+
+        /* Анимация для кнопки запуска, привлекающая внимание */
+        @keyframes pulse_button {
+            0% { box-shadow: 0 0 20px 0 rgba(255,45,45,0.7); }
+            50% { box-shadow: 0 0 35px 10px rgba(255,45,45,0.3); }
+            100% { box-shadow: 0 0 20px 0 rgba(255,45,45,0.7); }
+        }
+        
+        /* Базовые стили, обнуляющие все и устанавливающие фон */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Tektur', cursive;
+            cursor: none;
+        }
+
+        /* Главный контейнер, в котором разворачивается действие */
+        #main_container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: none; /* Изначально скрыт, появляется после нажатия кнопки */
+        }
+
+        /* Слой с фоном, на котором находится монстр */
+        #background_layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+            background-size: cover;
+            background-position: center center;
+            background-image: url('https://i.ibb.co/C0b7z0M/monster-transparent.png');
+            animation: subtle_breathing 15s infinite ease-in-out;
+            filter: blur(2px) brightness(0.7);
+        }
+
+        /* Холст, на котором рисуется твой вырезанный силуэт */
+        #render_canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 2;
+            transform: scaleX(-1); /* Зеркалим, чтобы было как в зеркале */
+        }
+
+        /* Эффект виньетки для затемнения краев экрана */
+        #vignette_overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 3;
+            box-shadow: inset 0 0 20vw 10vw #000;
+            pointer-events: none;
+        }
+
+        /* Экран-заглушка с кнопкой запуска */
+        #launcher_screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Кнопка активации */
+        #launch_button {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3rem;
+            color: #ff2d2d;
+            background: transparent;
+            border: 3px solid #ff2d2d;
+            padding: 2rem 4rem;
+            cursor: pointer;
+            text-shadow: 0 0 15px #ff2d2d;
+            transition: all 0.3s ease;
+            animation: pulse_button 2s infinite;
+        }
+        #launch_button:hover {
+            background: #ff2d2d;
+            color: #000;
+            text-shadow: none;
+            animation: none;
+        }
+        
+        /* Текст загрузки */
+        #loader {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white; font-size: 2rem;
+            font-family: monospace; z-index: 100;
+            display: none; /* Изначально скрыт */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="launcher_screen">
+        <button id="launch_button">АКТИВИРОВАТЬ КОШМАР</button>
+    </div>
+
+    <div id="main_container">
+        <div id="background_layer"></div>
+        <canvas id="render_canvas"></canvas>
+        <div id="vignette_overlay"></div>
+    </div>
+    
+    <video id="input_video" style="display: none;"></video>
+    <div id="loader"></div>
+
+    <script type="module">
+        // ====================================================================================
+        // ==                              ФИНАЛЬНЫЙ ДВИЖОК v4.0                               ==
+        // ====================================================================================
+        // Этот код запускается только после нажатия кнопки.
+        // Он чист от лаунчеров и обходных путей. Прямое действие.
+        
+        class FinalHorrorEngine {
+            /**
+             * Конструктор класса. Собирает все ссылки на DOM-элементы и инициализирует состояние.
+             */
+            constructor() {
+                this.dom = {
+                    launcher: document.getElementById('launcher_screen'),
+                    main: document.getElementById('main_container'),
+                    video: document.getElementById('input_video'),
+                    canvas: document.getElementById('render_canvas'),
+                    loader: document.getElementById('loader'),
+                    background: document.getElementById('background_layer'),
+                };
+                this.gfx = { ctx: this.dom.canvas.getContext('2d') };
+                this.audio = { context: null, drone: null };
+                this.segmentationEngine = null;
+                this.lastRenderResult = null;
+
+                // Привязываем главный метод запуска к кнопке
+                this.dom.launcher.querySelector('#launch_button').addEventListener('click', () => this.run());
+            }
+
+            /**
+             * Главный метод, запускающий всю последовательность действий.
+             */
+            async run() {
+                this.log('Получена команда на запуск. Начинаю...');
+                this.dom.launcher.style.display = 'none';
+                this.dom.main.style.display = 'block';
+
+                try {
+                    this.showLoader('ИНИЦИАЛИЗАЦИЯ АУДИОПОТОКА...');
+                    this.initAudio();
+
+                    this.showLoader('ЗАГРУЗКА МОДЕЛЕЙ СЕГМЕНТАЦИИ...');
+                    await this.initSegmentationEngine();
+                    
+                    this.showLoader('ЗАПРОС ДОСТУПА К КАМЕРЕ...');
+                    await this.initCamera();
+
+                    this.showLoader(false); // Скрываем загрузчик
+                    this.startRenderLoop();
+                    this.log('Система активна. Оно смотрит.');
+
+                } catch (error) {
+                    this.handleError(error);
+                }
+            }
+            
+            /**
+             * Выводит сообщение в консоль и на экран.
+             * @param {string|false} message - Сообщение для отображения или false, чтобы скрыть.
+             */
+            showLoader(message) {
+                if (message === false) {
+                    this.dom.loader.style.display = 'none';
+                } else {
+                    this.dom.loader.style.display = 'block';
+                    this.dom.loader.textContent = message;
+                }
+            }
+
+            /**
+             * Инициализирует и запускает фоновый гул.
+             */
+            initAudio() {
+                this.log('Активация генератора эмбиента...');
+                this.audio.context = new (window.AudioContext || window.webkitAudioContext)();
+                const drone = this.audio.context.createOscillator();
+                const droneGain = this.audio.context.createGain();
+                drone.type = 'sawtooth';
+                drone.frequency.setValueAtTime(45, this.audio.context.currentTime); // Низкочастотный гул
+                droneGain.gain.setValueAtTime(0.04, this.audio.context.currentTime); // На грани слышимости
+                drone.connect(droneGain).connect(this.audio.context.destination);
+                drone.start();
+                this.audio.drone = drone;
+            }
+            
+            /**
+             * Загружает и настраивает движок сегментации от Google MediaPipe.
+             */
+            async initSegmentationEngine() {
+                this.log('Загрузка нейросетевой модели...');
+                this.segmentationEngine = new SelfieSegmentation({locateFile: (file) => 
+                    `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+                });
+                
+                // Устанавливаем самую качественную модель для идеальной обрезки
+                this.segmentationEngine.setOptions({ modelSelection: 1 });
+                
+                // Привязываем обработчик, который будет сохранять результат каждого кадра
+                this.segmentationEngine.onResults((results) => {
+                    this.lastRenderResult = results;
+                });
+            }
+
+            /**
+             * Запрашивает доступ к камере и начинает трансляцию в скрытый video-элемент.
+             */
+            async initCamera() {
+                const camera = new Camera(this.dom.video, {
+                    onFrame: async () => {
+                        if (this.segmentationEngine && this.lastRenderResult === null) { // Отправляем только первый кадр для инициализации
+                            await this.segmentationEngine.send({image: this.dom.video});
+                        }
+                    },
+                    width: 1280, height: 720
+                });
+                await camera.start();
+            }
+
+            /**
+             * Запускает бесконечный цикл отрисовки (requestAnimationFrame).
+             */
+            startRenderLoop() {
+                const render = () => {
+                    // Отправляем текущий кадр на обработку в нейросеть
+                    if(this.dom.video.readyState >= 3) { // Убеждаемся, что кадр доступен
+                       this.segmentationEngine.send({image: this.dom.video});
+                    }
+                    
+                    // Если у нас есть результат обработки, рисуем его
+                    if(this.lastRenderResult) {
+                        this.drawFrame(this.lastRenderResult);
+                    }
+                    requestAnimationFrame(render);
+                };
+                requestAnimationFrame(render);
+            }
+
+            /**
+             * Главная функция отрисовки. Собирает все слои вместе.
+             * @param {object} results - Результат работы нейросети сегментации.
+             */
+            drawFrame(results) {
+                const canvas = this.dom.canvas;
+                const ctx = this.gfx.ctx;
+                const width = results.image.width;
+                const height = results.image.height;
+                
+                // Устанавливаем размер холста один раз
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+                
+                ctx.save();
+                ctx.clearRect(0, 0, width, height);
+
+                // 1. Рисуем маску твоего силуэта с размытием для плавных краев
+                ctx.filter = 'blur(8px)';
+                ctx.drawImage(results.segmentationMask, 0, 0, width, height);
+                ctx.filter = 'none';
+
+                // 2. Операция "source-in": следующий рисунок будет виден только там, где уже есть маска.
+                ctx.globalCompositeOperation = 'source-in';
+                
+                // 3. Рисуем поверх маски твое видео. Теперь твой силуэт - это "окно" с твоим изображением.
+                ctx.drawImage(results.image, 0, 0, width, height);
+
+                ctx.restore();
+            }
+
+            /**
+             * Обрабатывает критические ошибки и выводит сообщение пользователю.
+             * @param {Error} error - Пойманная ошибка.
+             */
+            handleError(error) {
+                console.error("КРИТИЧЕСКАЯ ОШИБКА:", error);
+                this.showLoader(`ОШИБКА: ${error.message}. Обновите страницу.`);
+            }
+
+            /**
+             * Просто логгер для красоты кода.
+             * @param {string} message - Сообщение.
+             */
+            log(message) {
+                console.log(`[ENGINE v4.0]: ${message}`);
+            }
+        }
+        
+        // Создаем и запускаем экземпляр движка.
+        new FinalHorrorEngine();
+    </script>
+</body>
+</html>
